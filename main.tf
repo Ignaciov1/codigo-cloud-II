@@ -228,11 +228,23 @@ resource "aws_launch_template" "web_template" {
 
   user_data = base64encode(<<-EOF
               #!/bin/bash
+              # 1. Actualizar e instalar dependencias
               apt-get update -y
               apt-get install -y docker.io docker-compose-v2 git mysql-client-core-8.0
               systemctl start docker
               systemctl enable docker
               usermod -aG docker ubuntu
+
+              # 2. Descargar el código
+              cd /home/ubuntu
+              git clone https://github.com/Ignaciov1/ECR-DOCKER-CLOUD-2.git
+              cd ECR-DOCKER-CLOUD-2/tienda-tech-EC2
+
+              # 3. Crear el archivo .env dinámicamente con el RDS recién creado
+              echo "DB_HOST=${aws_db_instance.mysql_db.address}" > .env
+
+              # 4. Levantar la aplicación
+              sudo docker compose up -d --build
               EOF
   )
 }
