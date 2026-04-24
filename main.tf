@@ -248,17 +248,37 @@ resource "aws_launch_template" "web_template" {
               DB_NAME=technovadb
               EOT
 
-              # 4. Levantar la aplicación
-              sudo docker compose up -d --build
+              # 4. CREAR EL SERVICIO SYSTEMD (Requisito de la rúbrica)
+              cat << 'EOT' > /etc/systemd/system/app-compose.service
+              [Unit]
+              Description=Servicio Docker Compose para TechNova
+              Requires=docker.service
+              After=docker.service
+
+              [Service]
+              Type=oneshot
+              RemainAfterExit=yes
+              WorkingDirectory=/home/ubuntu/ECR-DOCKER-CLOUD-2/tienda-tech-EC2
+              ExecStart=/usr/bin/docker compose up -d --build
+              ExecStop=/usr/bin/docker compose down
+
+              [Install]
+              WantedBy=multi-user.target
+              EOT
+
+              # 5. Activar y arrancar el servicio automáticamente
+              systemctl daemon-reload
+              systemctl enable app-compose.service
+              systemctl start app-compose.service
               EOF
   )
 }
 
 resource "aws_autoscaling_group" "web_asg" {
   vpc_zone_identifier = [aws_subnet.public_1a.id, aws_subnet.public_1b.id]
-  desired_capacity    = 2
-  max_size            = 4
-  min_size            = 2
+  desired_capacity    = 1
+  max_size            = 3
+  min_size            = 1
   
   # --- ACTUALIZADO: Registrar en ambos grupos (80 y 3001) ---
   target_group_arns   = [
