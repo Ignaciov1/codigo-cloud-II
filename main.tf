@@ -240,8 +240,13 @@ resource "aws_launch_template" "web_template" {
               git clone https://github.com/Ignaciov1/ECR-DOCKER-CLOUD-2.git
               cd ECR-DOCKER-CLOUD-2/tienda-tech-EC2
 
-              # 3. Crear el archivo .env dinámicamente con el RDS recién creado
-              echo "DB_HOST=${aws_db_instance.mysql_db.address}" > .env
+              # 3. Crear el archivo .env con TODAS las credenciales
+              cat <<EOT > .env
+              DB_HOST=${aws_db_instance.mysql_db.address}
+              DB_USER=admin
+              DB_PASSWORD=PasswordSegura123
+              DB_NAME=technovadb
+              EOT
 
               # 4. Levantar la aplicación
               sudo docker compose up -d --build
