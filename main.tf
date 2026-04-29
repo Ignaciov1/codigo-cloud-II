@@ -93,7 +93,6 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # --- NUEVO: Permite tráfico al balanceador por el puerto 3001 ---
   ingress {
     from_port   = 3001
     to_port     = 3001
@@ -120,7 +119,6 @@ resource "aws_security_group" "ec2_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
-  # --- NUEVO: Permite a las EC2 recibir tráfico del balanceador en el 3001 ---
   ingress {
     from_port       = 3001
     to_port         = 3001
@@ -173,14 +171,12 @@ resource "aws_lb_target_group" "web_tg" {
   vpc_id   = aws_vpc.main.id
 }
 
-# --- NUEVO: Target Group para Backend (Puerto 3001) ---
 resource "aws_lb_target_group" "backend_tg" {
   name     = "technova-tg-3001"
   port     = 3001
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
 
-  # --- NUEVO: Health Check tolerante para la API (acepta 404) ---
   health_check {
     path                = "/"
     protocol            = "HTTP"
@@ -202,7 +198,6 @@ resource "aws_lb_listener" "web_listener" {
   }
 }
 
-# --- NUEVO: Listener para Puerto 3001 ---
 resource "aws_lb_listener" "backend_listener" {
   load_balancer_arn = aws_lb.web_alb.arn
   port              = "3001"
@@ -230,7 +225,7 @@ resource "aws_launch_template" "web_template" {
               #!/bin/bash
               # 1. Actualizar e instalar dependencias
               apt-get update -y
-              apt-get install -y docker.io docker-compose-v2 git mysql-client-core-8.0
+              apt-get install -y docker.io docker-compose-v2 git mysql-client-core-8.0 wget
               systemctl start docker
               systemctl enable docker
               usermod -aG docker ubuntu
@@ -270,6 +265,43 @@ resource "aws_launch_template" "web_template" {
               systemctl daemon-reload
               systemctl enable app-compose.service
               systemctl start app-compose.service
+
+              # 6. INSTALAR Y CONFIGURAR CLOUDWATCH AGENT
+              cd /home/ubuntu
+              wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+              dpkg -i -E ./amazon-cloudwatch-agent.deb
+              
+              cat << 'EOT' > /opt/aws/amazon-cloudwatch-agent/bin/config.json
+              {
+                "agent": {
+                  "metrics_collection_interval": 60,
+                  "run_as_user": "root"
+                },
+                "metrics": {
+                  "append_dimensions": {
+                    "InstanceId": "$${aws:InstanceId}"
+                  },
+                  "metrics_collected": {
+                    "cpu": {
+                      "measurement": ["cpu_usage_active"],
+                      "metrics_collection_interval": 60,
+                      "totalcpu": true
+                    },
+                    "mem": {
+                      "measurement": ["mem_used_percent"],
+                      "metrics_collection_interval": 60
+                    },
+                    "disk": {
+                      "measurement": ["used_percent"],
+                      "metrics_collection_interval": 60,
+                      "resources": ["/"]
+                    }
+                  }
+                }
+              }
+              EOT
+              
+              /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json
               EOF
   )
 }
@@ -280,7 +312,6 @@ resource "aws_autoscaling_group" "web_asg" {
   max_size            = 3
   min_size            = 1
   
-  # --- ACTUALIZADO: Registrar en ambos grupos (80 y 3001) ---
   target_group_arns   = [
     aws_lb_target_group.web_tg.arn, 
     aws_lb_target_group.backend_tg.arn
@@ -324,4 +355,140 @@ resource "aws_ecr_repository" "frontend" {
 
 resource "aws_ecr_repository" "backend" { 
   name = "tienda-tech-backend" 
+}
+
+# ==============================================================================
+# CAPA 6: OBSERVABILIDAD Y MONITOREO (CLOUDWATCH Y SNS)
+# ==============================================================================
+# 1. Tópico de SNS y Suscripción
+resource "aws_sns_topic" "alertas_technova" {
+  name = "technova-alertas-topic"
+}
+
+resource "aws_sns_topic_subscription" "alerta_email" {
+  topic_arn = aws_sns_topic.alertas_technova.arn
+  protocol  = "email"
+  endpoint  = "ig.sariego@duocuc.cl" # <--- ¡CAMBIA ESTO POR TU CORREO REAL!
+}
+
+# 2. Alarma de CPU para el Auto Scaling Group (Supera el 80%)
+resource "aws_cloudwatch_metric_alarm" "cpu_alta" {
+  alarm_name          = "TechNova-CPU-Alta"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = "5"
+  alarm_description   = "Se activará si el promedio de CPU del ASG supera el 80%(5% para prueba de que funciona.)"
+  alarm_actions       = [aws_sns_topic.alertas_technova.arn]
+  
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.web_asg.name
+  }
+}
+
+# 1. Dashboard dedicado para EC2 (Métricas del Agente)
+# Dashboard con búsqueda dinámica (Soluciona los guiones --)
+# Dashboard corregido con los nombres de métricas reales de tu instancia
+# Dashboard EC2 Limpio (Muestra solo la instancia activa)
+resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
+  dashboard_name = "TechNova-Dashboard-Graficos" # <-- Nombre nuevo para forzar la creación
+  
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric",
+        x      = 0, y = 0, width = 8, height = 6,
+        properties = {
+          metrics = [
+            ["CWAgent", "cpu_usage_active", "InstanceId", "*"]
+          ],
+          view    = "singleValue",
+          region  = "us-east-1",
+          stat    = "Average",
+          period  = 60,
+          title   = "Uso de CPU EC2 (%)"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 8, y = 0, width = 8, height = 6,
+        properties = {
+          metrics = [
+            ["CWAgent", "mem_used_percent", "InstanceId", "*"]
+          ],
+          view    = "gauge", # <-- MEDIDOR
+          yAxis   = {
+            left = { min = 0, max = 100 }
+          },
+          region  = "us-east-1",
+          stat    = "Average",
+          period  = 60,
+          title   = "Uso de Memoria RAM (%)"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 16, y = 0, width = 8, height = 6,
+        properties = {
+          metrics = [
+            ["CWAgent", "disk_used_percent", "path", "/", "InstanceId", "*"]
+          ],
+          view    = "pie", # <-- GRÁFICO CIRCULAR
+          region  = "us-east-1",
+          stat    = "Average",
+          period  = 60,
+          title   = "Uso de Disco (%)"
+        }
+      }
+    ]
+  })
+}
+
+# 2. Dashboard dedicado para RDS (Métricas Nativas)
+resource "aws_cloudwatch_dashboard" "dashboard_rds" {
+  dashboard_name = "TechNova-Monitor-RDS"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric",
+        x      = 0, y = 0, width = 8, height = 3,
+        properties = {
+          metrics = [ ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.mysql_db.identifier] ],
+          view    = "singleValue",
+          region  = "us-east-1",
+          stat    = "Average",
+          period  = 300,
+          title   = "CPU RDS (%)"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 8, y = 0, width = 8, height = 3,
+        properties = {
+          metrics = [ ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.mysql_db.identifier] ],
+          view    = "singleValue",
+          region  = "us-east-1",
+          stat    = "Average",
+          period  = 300,
+          title   = "Conexiones DB (Actuales)"
+        }
+      },
+      {
+        type   = "metric",
+        x      = 16, y = 0, width = 8, height = 3,
+        properties = {
+          metrics = [ ["AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", aws_db_instance.mysql_db.identifier] ],
+          view    = "singleValue",
+          region  = "us-east-1",
+          stat    = "Average",
+          period  = 300,
+          title   = "Memoria RAM Libre DB (Bytes)"
+        }
+      }
+    ]
+  })
 }
