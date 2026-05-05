@@ -394,7 +394,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_alta" {
 # Dashboard corregido con los nombres de métricas reales de tu instancia
 # Dashboard EC2 Limpio (Muestra solo la instancia activa)
 resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
-  dashboard_name = "TechNova-Dashboard-Graficos" # <-- Nombre nuevo para forzar la creación
+  dashboard_name = "TechNova-Dashboard-Graficos" 
   
   dashboard_body = jsonencode({
     widgets = [
@@ -403,12 +403,10 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
         x      = 0, y = 0, width = 8, height = 6,
         properties = {
           metrics = [
-            ["CWAgent", "cpu_usage_active", "InstanceId", "*"]
+            [ { "expression": "SORT(SEARCH('Namespace=\"CWAgent\" MetricName=\"cpu_usage_active\"', 'Average', 60), MAX, DESC, 1)", "id": "q1", "label": "CPU Instancia Activa" } ]
           ],
           view    = "singleValue",
           region  = "us-east-1",
-          stat    = "Average",
-          period  = 60,
           title   = "Uso de CPU EC2 (%)"
         }
       },
@@ -417,15 +415,11 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
         x      = 8, y = 0, width = 8, height = 6,
         properties = {
           metrics = [
-            ["CWAgent", "mem_used_percent", "InstanceId", "*"]
+            [ { "expression": "SORT(SEARCH('Namespace=\"CWAgent\" MetricName=\"mem_used_percent\"', 'Average', 60), MAX, DESC, 1)", "id": "q2", "label": "RAM Instancia Activa" } ]
           ],
-          view    = "gauge", # <-- MEDIDOR
-          yAxis   = {
-            left = { min = 0, max = 100 }
-          },
+          view    = "gauge",
+          yAxis   = { left = { min = 0, max = 100 } },
           region  = "us-east-1",
-          stat    = "Average",
-          period  = 60,
           title   = "Uso de Memoria RAM (%)"
         }
       },
@@ -434,12 +428,10 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
         x      = 16, y = 0, width = 8, height = 6,
         properties = {
           metrics = [
-            ["CWAgent", "disk_used_percent", "path", "/", "InstanceId", "*"]
+            [ { "expression": "SORT(SEARCH('Namespace=\"CWAgent\" MetricName=\"disk_used_percent\"', 'Average', 60), MAX, DESC, 1)", "id": "q3", "label": "Disco Instancia Activa" } ]
           ],
-          view    = "pie", # <-- GRÁFICO CIRCULAR
+          view    = "pie",
           region  = "us-east-1",
-          stat    = "Average",
-          period  = 60,
           title   = "Uso de Disco (%)"
         }
       }
