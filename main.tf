@@ -380,8 +380,8 @@ resource "aws_cloudwatch_metric_alarm" "cpu_alta" {
   namespace           = "AWS/EC2"
   period              = "120"
   statistic           = "Average"
-  threshold           = "5"
-  alarm_description   = "Se activará si el promedio de CPU del ASG supera el 80%(5% para prueba de que funciona.)"
+  threshold           = "80"
+  alarm_description   = "Se activará si el promedio de CPU del ASG supera el 80%."
   alarm_actions       = [aws_sns_topic.alertas_technova.arn]
   
   dimensions = {
