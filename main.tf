@@ -243,7 +243,18 @@ resource "aws_launch_template" "web_template" {
               DB_NAME=technovadb
               EOT
 
-              # 4. CREAR EL SERVICIO SYSTEMD (Requisito de la rúbrica)
+              # 4. >>> INYECCIÓN SQL SEGURA E INTELIGENTE <<<
+              # Verificamos si la base de datos ya tiene tablas.
+              TABLAS=$(mysql -h ${aws_db_instance.mysql_db.address} -u admin -pPasswordSegura123 -N -B -e "SHOW TABLES IN technovadb;")
+              
+              if [ -z "$TABLAS" ]; then
+                echo "La base de datos está vacía. Ejecutando init.sql..."
+                mysql -h ${aws_db_instance.mysql_db.address} -u admin -pPasswordSegura123 technovadb < /home/ubuntu/ECR-DOCKER-CLOUD-2/tienda-tech-EC2/tienda-tech-db/init.sql
+              else
+                echo "La base de datos ya tiene información. Protegiendo datos y omitiendo inyección..."
+              fi
+
+              # 5. CREAR EL SERVICIO SYSTEMD (Requisito de la rúbrica)
               cat << 'EOT' > /etc/systemd/system/app-compose.service
               [Unit]
               Description=Servicio Docker Compose para TechNova
@@ -261,12 +272,12 @@ resource "aws_launch_template" "web_template" {
               WantedBy=multi-user.target
               EOT
 
-              # 5. Activar y arrancar el servicio automáticamente
+              # 6. Activar y arrancar el servicio automáticamente
               systemctl daemon-reload
               systemctl enable app-compose.service
               systemctl start app-compose.service
 
-              # 6. INSTALAR Y CONFIGURAR CLOUDWATCH AGENT
+              # 7. INSTALAR Y CONFIGURAR CLOUDWATCH AGENT
               cd /home/ubuntu
               wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
               dpkg -i -E ./amazon-cloudwatch-agent.deb
@@ -403,11 +414,11 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
         x      = 0, y = 0, width = 8, height = 6,
         properties = {
           metrics = [
-            [ { "expression": "SORT(SEARCH('Namespace=\"CWAgent\" MetricName=\"cpu_usage_active\"', 'Average', 60), MAX, DESC, 1)", "id": "q1", "label": "CPU Instancia Activa" } ]
+            [ { "expression": "SEARCH('Namespace=\"CWAgent\" MetricName=\"cpu_usage_active\"', 'Average', 60)", "id": "q1" } ]
           ],
           view    = "singleValue",
           region  = "us-east-1",
-          title   = "Uso de CPU EC2 (%)"
+          title   = "Uso de CPU por Instancia (%)"
         }
       },
       {
@@ -415,12 +426,12 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
         x      = 8, y = 0, width = 8, height = 6,
         properties = {
           metrics = [
-            [ { "expression": "SORT(SEARCH('Namespace=\"CWAgent\" MetricName=\"mem_used_percent\"', 'Average', 60), MAX, DESC, 1)", "id": "q2", "label": "RAM Instancia Activa" } ]
+            [ { "expression": "SEARCH('Namespace=\"CWAgent\" MetricName=\"mem_used_percent\"', 'Average', 60)", "id": "q2" } ]
           ],
           view    = "gauge",
           yAxis   = { left = { min = 0, max = 100 } },
           region  = "us-east-1",
-          title   = "Uso de Memoria RAM (%)"
+          title   = "RAM por Instancia (%)"
         }
       },
       {
@@ -428,11 +439,11 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
         x      = 16, y = 0, width = 8, height = 6,
         properties = {
           metrics = [
-            [ { "expression": "SORT(SEARCH('Namespace=\"CWAgent\" MetricName=\"disk_used_percent\"', 'Average', 60), MAX, DESC, 1)", "id": "q3", "label": "Disco Instancia Activa" } ]
+            [ { "expression": "SEARCH('Namespace=\"CWAgent\" MetricName=\"disk_used_percent\"', 'Average', 60)", "id": "q3" } ]
           ],
           view    = "pie",
           region  = "us-east-1",
-          title   = "Uso de Disco (%)"
+          title   = "Disco por Instancia (%)"
         }
       }
     ]
