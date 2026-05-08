@@ -14,6 +14,9 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+# Obtener automáticamente el ID de la cuenta actual
+data "aws_caller_identity" "current" {}
+
 # ==============================================================================
 # CAPA 1: NETWORKING (VPC Y SUBREDES)
 # ==============================================================================
@@ -332,6 +335,20 @@ resource "aws_autoscaling_group" "web_asg" {
     id      = aws_launch_template.web_template.id
     version = "$Latest"
   }
+
+  # ETIQUETA DE BACKUP: Vital para que la Capa 7 funcione automáticamente
+  tag {
+    key                 = "Backup"
+    value               = "true"
+    propagate_at_launch = true
+  }
+
+  # ETIQUETA DE NOMBRE: Para identificar las instancias en la consola de EC2
+  tag {
+    key                 = "Name"
+    value               = "TechNova-Web-Server"
+    propagate_at_launch = true
+  }
 }
 
 # ==============================================================================
@@ -494,4 +511,50 @@ resource "aws_cloudwatch_dashboard" "dashboard_rds" {
       }
     ]
   })
+}
+
+# ==============================================================================
+# CAPA 7: BACKUP Y RECUPERACIÓN (REQUISITO PRUEBA 8)
+# ==============================================================================
+
+# 1. Crear el Almacén de Copias de Seguridad (Vault)
+resource "aws_backup_vault" "technova_vault" {
+  name        = "BovedaTechNova-IaC"
+}
+
+# 2. Crear el Plan de Backup (Puntos 2.1, 2.2 y 2.3 de la rúbrica)
+resource "aws_backup_plan" "technova_plan" {
+  name = "PlanContingenciaTechNova"
+
+  rule {
+    rule_name         = "RespaldoDiario7Dias"
+    target_vault_name = aws_backup_vault.technova_vault.name
+    
+    # Frecuencia: Todos los días a las 03:30 AM UTC (aprox. 00:30 AM Chile)
+    schedule          = "cron(30 3 * * ? *)"
+
+    # Retención de 7 días exactos
+    lifecycle {
+      delete_after = 7
+    }
+  }
+}
+
+# 3. Selección de Recursos (Puntos 3.1 y 3.2 de la rúbrica)
+resource "aws_backup_selection" "technova_selection" {
+  # CAMBIO AQUÍ: Ahora el ID de cuenta se llena solo
+  iam_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  
+  name         = "SeleccionRecursosTechNova"
+  plan_id      = aws_backup_plan.technova_plan.id
+
+  resources = [
+    aws_db_instance.mysql_db.arn
+  ]
+
+  selection_tag {
+    type  = "STRINGEQUALS"
+    key   = "Backup"
+    value = "true"
+  }
 }
