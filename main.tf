@@ -14,7 +14,7 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# Obtener automáticamente el ID de la cuenta actual
+# Obtener automáticamente el ID de la cuenta actual para evitar el error 403
 data "aws_caller_identity" "current" {}
 
 # ==============================================================================
@@ -247,7 +247,6 @@ resource "aws_launch_template" "web_template" {
               EOT
 
               # 4. >>> INYECCIÓN SQL SEGURA E INTELIGENTE <<<
-              # Verificamos si la base de datos ya tiene tablas.
               TABLAS=$(mysql -h ${aws_db_instance.mysql_db.address} -u admin -pPasswordSegura123 -N -B -e "SHOW TABLES IN technovadb;")
               
               if [ -z "$TABLAS" ]; then
@@ -257,7 +256,7 @@ resource "aws_launch_template" "web_template" {
                 echo "La base de datos ya tiene información. Protegiendo datos y omitiendo inyección..."
               fi
 
-              # 5. CREAR EL SERVICIO SYSTEMD (Requisito de la rúbrica)
+              # 5. CREAR EL SERVICIO SYSTEMD
               cat << 'EOT' > /etc/systemd/system/app-compose.service
               [Unit]
               Description=Servicio Docker Compose para TechNova
@@ -388,7 +387,6 @@ resource "aws_ecr_repository" "backend" {
 # ==============================================================================
 # CAPA 6: OBSERVABILIDAD Y MONITOREO (CLOUDWATCH Y SNS)
 # ==============================================================================
-# 1. Tópico de SNS y Suscripción
 resource "aws_sns_topic" "alertas_technova" {
   name = "technova-alertas-topic"
 }
@@ -396,10 +394,9 @@ resource "aws_sns_topic" "alertas_technova" {
 resource "aws_sns_topic_subscription" "alerta_email" {
   topic_arn = aws_sns_topic.alertas_technova.arn
   protocol  = "email"
-  endpoint  = "ig.sariego@duocuc.cl" # <--- ¡CAMBIA ESTO POR TU CORREO REAL!
+  endpoint  = "ig.sariego@duocuc.cl" 
 }
 
-# 2. Alarma de CPU para el Auto Scaling Group (Supera el 80%)
 resource "aws_cloudwatch_metric_alarm" "cpu_alta" {
   alarm_name          = "TechNova-CPU-Alta"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -417,10 +414,6 @@ resource "aws_cloudwatch_metric_alarm" "cpu_alta" {
   }
 }
 
-# 1. Dashboard dedicado para EC2 (Métricas del Agente)
-# Dashboard con búsqueda dinámica (Soluciona los guiones --)
-# Dashboard corregido con los nombres de métricas reales de tu instancia
-# Dashboard EC2 Limpio (Muestra solo la instancia activa)
 resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
   dashboard_name = "TechNova-Dashboard-Graficos" 
   
@@ -467,7 +460,6 @@ resource "aws_cloudwatch_dashboard" "dashboard_ec2_nuevo" {
   })
 }
 
-# 2. Dashboard dedicado para RDS (Métricas Nativas)
 resource "aws_cloudwatch_dashboard" "dashboard_rds" {
   dashboard_name = "TechNova-Monitor-RDS"
 
@@ -516,13 +508,10 @@ resource "aws_cloudwatch_dashboard" "dashboard_rds" {
 # ==============================================================================
 # CAPA 7: BACKUP Y RECUPERACIÓN (REQUISITO PRUEBA 8)
 # ==============================================================================
-
-# 1. Crear el Almacén de Copias de Seguridad (Vault)
 resource "aws_backup_vault" "technova_vault" {
   name        = "BovedaTechNova-IaC"
 }
 
-# 2. Crear el Plan de Backup (Puntos 2.1, 2.2 y 2.3 de la rúbrica)
 resource "aws_backup_plan" "technova_plan" {
   name = "PlanContingenciaTechNova"
 
@@ -530,19 +519,16 @@ resource "aws_backup_plan" "technova_plan" {
     rule_name         = "RespaldoDiario7Dias"
     target_vault_name = aws_backup_vault.technova_vault.name
     
-    # Frecuencia: Todos los días a las 03:30 AM UTC (aprox. 00:30 AM Chile)
-    schedule          = "cron(30 3 * * ? *)"
+    # CRON CORREGIDO: 04:30 AM UTC equivale exactamente a las 00:30 AM en Chile actual.
+    schedule          = "cron(30 4 * * ? *)"
 
-    # Retención de 7 días exactos
     lifecycle {
       delete_after = 7
     }
   }
 }
 
-# 3. Selección de Recursos (Puntos 3.1 y 3.2 de la rúbrica)
 resource "aws_backup_selection" "technova_selection" {
-  # CAMBIO AQUÍ: Ahora el ID de cuenta se llena solo
   iam_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
   
   name         = "SeleccionRecursosTechNova"
