@@ -520,7 +520,7 @@ resource "aws_backup_plan" "technova_plan" {
     target_vault_name = aws_backup_vault.technova_vault.name
     
     # CRON CORREGIDO: 04:30 AM UTC equivale exactamente a las 00:30 AM en Chile actual.
-    schedule          = "cron(30 4 * * ? *)"
+    schedule          = "cron(35 21 * * ? *)"
 
     lifecycle {
       delete_after = 7
