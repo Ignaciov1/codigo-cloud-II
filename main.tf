@@ -359,6 +359,7 @@ resource "aws_db_subnet_group" "rds_subnets" {
 }
 
 resource "aws_db_instance" "mysql_db" {
+  identifier             = "technova-db-primary"
   allocated_storage      = 50
   engine                 = "mysql"
   engine_version         = "8.4"
